@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+# the guide is cloned at runtime, never vendored
+yokubi/
+# personal progress never belongs in the repo
+progress.json
+*.progress.json
