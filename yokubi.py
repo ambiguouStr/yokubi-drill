@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read a Yokubi lesson, then drill it on real sentences from your Anki collection.
+"""Read a Yokubi lesson, then drill it on real sentences from a corpus you supply.
 
 Yokubi (https://yoku.bi, by Morgawr, CC-BY-4.0) teaches the closed grammatical
 system of Japanese — particles, conjugation, clauses, the four conditionals — in
@@ -7,21 +7,13 @@ system of Japanese — particles, conjugation, clauses, the four conditionals �
 author's part: grammar rules are learned by use, not by flashcard. What it leaves
 open is where to do the using.
 
-Your Anki collection already holds thousands of sentences with furigana,
-translations and recorded audio. This links the two: read a lesson, then work
-through sentences that actually contain its grammar, with the matching morpheme
-highlighted and the audio playing.
+So bring sentences. The corpus is a plain JSONL file — one object per line, a
+leading _meta — which this reads and never writes. Build one from an Anki
+collection with --import-anki, or generate it from anything else: subtitles,
+Tatoeba, a textbook you typed up.
 
-Nothing is generated. Every sentence was written by a human for a published
-deck — a constraint worth keeping, since invented grammar examples are exactly
-the kind you cannot check.
-
-The collection is opened read-only and never written to. Scheduling, grading and
-sync belong to Anki.
-
-The sentence corpus is a plain JSONL file. Build one from an Anki collection
-once with --import-anki; after that nothing here touches Anki, and the corpus
-can be copied, edited, shared or generated from any other source.
+Nothing is generated here. Every sentence is one a human wrote, which matters:
+invented grammar examples are exactly the kind a learner cannot check.
 
 Usage
   yokubi                    list lessons and how many sentences each has
@@ -30,7 +22,8 @@ Usage
   yokubi 10 --read          text only
   yokubi --random           a drillable lesson you have not opened
   yokubi --fetch            clone or update the Yokubi guide
-  yokubi --import-anki      build a corpus from an Anki collection, once
+  yokubi --import-anki      build a corpus from an Anki collection (one importer
+                            among others; see importers/)
   yokubi --corpus FILE      use a particular corpus for this run
   yokubi --export FILE      write progress to a portable file ("-" for stdout)
   yokubi --import FILE      merge progress from such a file
@@ -39,7 +32,6 @@ Usage
 Environment
   YOKUBI_DIR      data directory (default ~/.local/share/yokubi-drill)
   YOKUBI_CORPUS   corpus file (default $YOKUBI_DIR/corpus.jsonl)
-  ANKI_CLI_DIR    only read by --import-anki (default ~/.local/share/anki-cli)
 
 Keys while drilling
   space  reveal reading and translation, then advance
@@ -55,7 +47,6 @@ import os
 import random
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import termios
@@ -70,10 +61,6 @@ DATA = os.path.expanduser(os.environ.get("YOKUBI_DIR") or "~/.local/share/yokubi
 GUIDE = os.path.join(DATA, "yokubi")
 PROGRESS = os.path.join(DATA, "progress.json")
 CORPUS = os.path.expanduser(os.environ.get("YOKUBI_CORPUS") or os.path.join(DATA, "corpus.jsonl"))
-# Anki is reached only by --import-anki; the drill itself never opens it
-ANKI = os.path.expanduser(os.environ.get("ANKI_CLI_DIR") or "~/.local/share/anki-cli")
-
-CORPUS_VERSION = 1
 
 PLAYERS = (("afplay", ()), ("mpv", ("--no-video", "--really-quiet")),
            ("ffplay", ("-nodisp", "-autoexit", "-loglevel", "quiet")))
@@ -197,80 +184,6 @@ def write_corpus(rows, path, media="", source=""):
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     os.replace(tmp, path)
-
-
-# ------------------------------------------------------- anki, import only
-
-def strip_html(s):
-    s = re.sub(r"\[sound:[^\]]*\]", "", s)
-    return re.sub(r"<[^>]+>", "", s).replace("&nbsp;", " ").strip()
-
-
-# Field names differ per deck; these are tried in order. Add your own here.
-SENTENCE_FIELDS = ("Sentence", "BackSentence", "Expression", "SentKanji")
-READING_FIELDS = ("Sentence Furigana", "ReadingFurigana", "Reading", "SentFurigana")
-GLOSS_FIELDS = ("Sentence Meaning", "Translation", "Meaning", "SentEng")
-AUDIO_FIELDS = ("Sentence Audio", "AudioFile", "Audio", "SentAudio")
-
-
-def import_anki(out_path):
-    """Read an Anki collection once and write a corpus file. This is the only
-    code here that knows Anki exists; the drill reads the file, not the deck.
-
-    Opened read-only. Audio is recorded as a bare filename plus a media root in
-    _meta, so the corpus stays portable even though the files do not."""
-    collection = os.path.join(ANKI, "collection.anki2")
-    media = os.path.join(ANKI, "collection.media")
-    if not os.path.exists(collection):
-        sys.exit(f"no collection at {collection}\nset ANKI_CLI_DIR to point at one")
-    con = sqlite3.connect(f"file:{collection}?mode=ro", uri=True)
-    # Anki's schema declares this collation; without it even a SELECT fails
-    con.create_collation("unicase", lambda a, b: (a.lower() > b.lower()) - (a.lower() < b.lower()))
-    try:
-        con.execute("select 1 from notes limit 1").fetchone()
-    except sqlite3.OperationalError:
-        sys.exit("the collection is locked — quit Anki or `ank` and try again")
-    q = lambda s: con.execute(s).fetchall()
-    rows, skipped = [], []
-    for ntid, name in q("select id, name from notetypes"):
-        fields = [r[0] for r in q(f"select name from fields where ntid={ntid} order by ord")]
-        idx = {f: i for i, f in enumerate(fields)}
-        pick = lambda names: next((idx[f] for f in names if f in idx), None)
-        sent, furi, gloss, audio = (pick(SENTENCE_FIELDS), pick(READING_FIELDS),
-                                    pick(GLOSS_FIELDS), pick(AUDIO_FIELDS))
-        n_notes = q(f"select count(*) from notes where mid={ntid}")[0][0]
-        if sent is None:
-            if n_notes:
-                skipped.append((name, n_notes, fields))
-            continue
-        for (flds,) in q(f"select flds from notes where mid={ntid}"):
-            p = flds.split("\x1f")
-            text = strip_html(p[sent])
-            if not text:
-                continue
-            sound = ""
-            if audio is not None:
-                m = re.search(r"\[sound:([^\]]+)\]", p[audio])
-                if m:
-                    sound = m.group(1)
-            rows.append({"text": text, "source": name,
-                         "reading": strip_html(p[furi]) if furi is not None else "",
-                         "gloss": strip_html(p[gloss]) if gloss is not None else "",
-                         "audio": sound})
-    con.close()
-    write_corpus(rows, out_path, media=media, source=f"anki:{collection}")
-    with_audio = sum(1 for r in rows if r["audio"])
-    print(f"wrote {len(rows)} sentences to {out_path}  ({with_audio} with audio)")
-    by_src = {}
-    for r in rows:
-        by_src[r["source"]] = by_src.get(r["source"], 0) + 1
-    for k, v in sorted(by_src.items(), key=lambda x: -x[1]):
-        print(f"   {v:>6}  {k}")
-    for name, n, fields in skipped:
-        print(f"{DIM}   skipped {n} notes of {name!r}: no sentence field among "
-              f"{', '.join(fields[:5])}{RESET}")
-    print(f"\nFrom now on the drill reads this file. Re-run --import-anki after "
-          f"adding decks.")
 
 
 def index_corpus(corpus):
@@ -409,6 +322,34 @@ class Player:
 
 # --------------------------------------------------------------------- views
 
+def show_coverage(files, by_lesson, corpus):
+    """Which patterns are worth anything against *this* corpus. A pattern that
+    matches four sentences is useless and one that matches four hundred is a
+    drill; which you get is a property of your sentences, not of the regex, so
+    the judgement is made here rather than baked into patterns.py."""
+    counts = sorted(((len(by_lesson.get(n, [])), n, label) for n, label, _ in PATTERNS),
+                    reverse=True)
+    matched = sum(1 for s in corpus if s["lessons"])
+    print(f"\n{BOLD}{len(corpus)}{RESET} sentences · "
+          f"{BOLD}{matched}{RESET} match at least one lesson "
+          f"({100 * matched / len(corpus):.0f}%)\n")
+    print(f"  {'#':>3}  {'lesson':<32}{'sentences':>10}")
+    thin = []
+    for c, n, label in counts:
+        bar = "█" * min(30, c // 20) if c else ""
+        flag = ""
+        if c == 0:
+            flag = f"  {DIM}nothing here{RESET}"
+        elif c < 25:
+            flag = f"  {DIM}thin{RESET}"
+            thin.append(n)
+        print(f"  {n:>3}  {label:<32}{c:>10}  {DIM}{bar}{RESET}{flag}")
+    print(f"\n{DIM}  Lessons marked thin have too few examples to drill usefully — in your")
+    print(f"  corpus. Add decks or another source and they may fill in. The {len(files) - len(PATTERNS)}")
+    print(f"  lessons with no pattern at all are structural: their grammar leaves no")
+    print(f"  reliable surface mark, so any regex would match noise.{RESET}\n")
+
+
 def show_list(files, by_lesson):
     doc = load_progress()["lessons"]
     done = sum(1 for v in doc.values() if v.get("read_at"))
@@ -513,6 +454,8 @@ def main():
     ap.add_argument("--corpus", metavar="FILE", help="use this corpus for the run")
     ap.add_argument("--export", metavar="FILE", help="write progress to a portable file ('-' = stdout)")
     ap.add_argument("--import", metavar="FILE", dest="import_", help="merge progress from such a file")
+    ap.add_argument("--coverage", action="store_true",
+                    help="how many sentences each lesson has in your corpus")
     ap.add_argument("--where", action="store_true", help="show the paths in use")
     args = ap.parse_args()
 
@@ -522,10 +465,9 @@ def main():
         print(f"  guide       {GUIDE}")
         print(f"  corpus      {corpus}   ({have})")
         print(f"  progress    {PROGRESS}")
-        print(f"  anki        {os.path.join(ANKI, 'collection.anki2')}   "
-              f"(read only by --import-anki)")
         return
     if args.import_anki:
+        from importers.anki import import_anki
         return import_anki(args.import_anki)
     if args.fetch:
         return fetch_guide()
@@ -562,7 +504,10 @@ def main():
         if not files:
             sys.exit("still no lessons found")
 
-    by_lesson = index_corpus(load_corpus(args.corpus))
+    corpus = load_corpus(args.corpus)
+    by_lesson = index_corpus(corpus)
+    if args.coverage:
+        return show_coverage(files, by_lesson, corpus)
     n = args.lesson
     if args.random:
         doc = load_progress()["lessons"]

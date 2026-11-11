@@ -1,19 +1,20 @@
 """Which Yokubi lesson does a Japanese sentence exercise?
 
-Surface-pattern matching, deliberately. No morphological analyser is installed
-and none is needed for the lessons that carry a distinctive written form — て
-form, the conditionals, causative, passive and so on all leave a mark you can
-match on. Lessons whose content is syntactic rather than morphological (particle
-case, demonstratives, adverbs) are simply absent: a regex for them returns noise,
-and a drill built on noise is worse than no drill.
+Surface-pattern matching, deliberately. No morphological analyser is required
+for grammar that carries a distinctive written form — て form, the conditionals,
+causative, passive and so on all leave a mark a regex can find.
 
-So this covers 37 of Yokubi's 64 lessons. That is the honest ceiling of the
-approach, not a gap to be filled by writing looser patterns.
+Lessons whose content is syntactic rather than morphological are absent by
+design: particle case, demonstratives, adverbs, counters. A regex for those
+matches most of the language and tells you nothing, and a drill built on noise
+is worse than no drill. That is the ceiling of this approach, not a gap to be
+filled by writing looser patterns.
 
-Five further lessons were written and then removed: prohibition な, 〜たり〜たり,
-てみる, the causative, and 自分 each matched fewer than 25 of the 2,032 local
-sentences. The patterns were sound; the corpus simply does not contain enough
-examples to drill them. A lesson with nine examples is not a drill.
+Whether a given pattern is *useful* depends on the corpus you point at, not on
+this file — a pattern matching four sentences is useless and a pattern matching
+four hundred is a drill, and which one you get is a property of your sentences.
+So nothing is dropped here for being thin. Run `yokubi --coverage` to see the
+counts for your own corpus and decide.
 
 Each entry is (lesson number, label, regex). A sentence may match many.
 """
@@ -56,12 +57,17 @@ PATTERNS = [
     (40, "comparison より/の方が",     r"(?:より|の方|ほうが|一番|いちばん|最も)"),
     (42, "のに/ように/ために/おかげで",  r"(?:ように|ために|せいで|おかげで|のに(?![ぁ-ん]))"),
     (43, "likeness みたい/らしい/そう", r"(?:みたい|らしい|っぽい|そうだ|そうです|ようだ)"),
+    (32, "prohibition な / なさい",    r"(?:なさい|ないで(?:ください|下さい)|[るうくぐすつぬぶむ]な[。！\s])"),
     (44, "must なければ/だめ/いけない",  r"(?:なければ|なきゃ|ないと|だめ|駄目|いけな|ならな)"),
+    (45, "〜たり〜たり / ては",        r"(?:たり|だり|ては(?![ぁ-ん]))"),
     (46, "だけ/のみ/ばかり/しか",       r"(?:だけ|のみ|ばかり|ばっかり|しか)"),
     (47, "もう/まだ/また",             r"(?:もう|まだ|また)(?![ぁ-ん])"),
     (49, "とする",                    r"と(?:する|します|した|して)"),
+    (50, "てみる",                    r"て(?:み(?:る|ます|た|て|よう|れば))"),
     (51, "と思う/と考える",            r"と(?:思|考え)"),
+    (53, "causative せる/させる",      r"(?:[あかがさたなはまやらわ]せ|させ)(?:る|た|ます|て|ない|られ|よう)(?![ぁ-ん])"),
     (54, "なる/する",                 r"(?:に|く)(?:な(?:る|ります|った|り)|し(?:ます|た|て))"),
+    (55, "自分",                      r"自分"),
     (56, "なくて/ないで/ず/ずに",       r"(?:なくて|ないで|ずに|ず[、，。])"),
     (57, "てしまう/ておく",            r"(?:て(?:しま|お(?:く|き|い))|ちゃ(?:う|っ)|じゃ(?:う|っ))"),
     (58, "ていく/てくる",              r"て(?:い(?:く|き|こう)|き(?:ます|た|て)|くる|来る)"),

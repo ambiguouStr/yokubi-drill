@@ -4,7 +4,7 @@ Read a [Yokubi](https://yoku.bi) lesson in your terminal, then drill it on real
 Japanese sentences — from any corpus you supply.
 
 ```
-Lesson 27 · conditionals · 2/77 · Shin Kanzen Master N2
+Lesson 27 · conditionals · 2/77 · my-sentences
 
   そんな山の中に住んでいて車もなかったら、生活が不便に違いない。
 
@@ -50,21 +50,22 @@ Sentences live in a JSONL file, not in Anki. One object per line, plus a leading
 `_meta`:
 
 ```json
-{"_meta": {"version": 1, "media": "/path/to/audio", "count": 2032}}
+{"_meta": {"version": 1, "media": "/path/to/audio", "count": 1200}}
 {"text": "この整理券は、商品受け取りの際、必要です。",
  "reading": "この 整理券[せいりけん]は、…",
  "gloss": "This ticket is required when collecting your purchase.",
  "audio": "lesson_01_line_001.mp3",
- "source": "Shin Kanzen Master N2"}
+ "source": "my-sentences"}
 ```
 
 Only `text` is required. `audio` is a bare filename resolved against `_meta.media`,
 so moving the corpus between machines means editing one line.
 
 `--import-anki` reads a collection **once**, read-only, and writes this file.
-After that nothing here opens Anki — point `ANKI_CLI_DIR` at nothing and the
-drill still runs. Any other generator works equally well: Tatoeba, subtitle
-files, a textbook you typed up.
+All the Anki-aware code lives in `importers/anki.py` and nowhere else — point
+`ANKI_CLI_DIR` at nothing and the drill still runs. Write another importer the
+same way: read whatever you have, emit this format. Tatoeba, subtitle files, a
+textbook you typed up.
 
 ## Use
 
@@ -101,21 +102,24 @@ is ever dropped.
 
 ## Coverage
 
-**37 of the 64 lessons** are drillable. Against one corpus of 2,032 sentences
-(Kaishi 1.5k + Shin Kanzen Master N2), 1,791 of them — 88% — matched at least one
-lesson. Your mileage depends on your corpus; `yokubi` with no argument shows the
-per-lesson counts for yours.
+```bash
+yokubi --coverage
+```
+
+**42 of the 64 lessons have a pattern.** How many of those are actually
+*drillable* is a property of your corpus, not of this tool, so the question is
+answered at runtime rather than decided in advance: `--coverage` lists every
+lesson with its sentence count and marks the thin ones.
 
 Matching is by surface pattern. No morphological analyser is required, because
 the grammar worth drilling leaves a written mark: て form, past た, the
-conditionals, ている, passive, なければならない. Lessons whose content is
-syntactic rather than morphological are deliberately absent — particle case,
-demonstratives, adverbs, counters. A regex for those returns noise, and drilling
+conditionals, ている, passive, なければならない. The 22 lessons with no pattern
+are structural omissions — particle case, demonstratives, adverbs, counters. A
+regex for those matches most of the language and tells you nothing, and drilling
 noise is worse than not drilling.
 
-Five more were written and removed (prohibition な, 〜たり〜たり, てみる, the
-causative, 自分): each matched fewer than 25 sentences in the reference
-collection. The patterns were fine; a lesson with nine examples is not a drill.
+Nothing is dropped for being thin. A pattern that finds four sentences in one
+corpus finds four hundred in another; that is the corpus talking, not the regex.
 
 **Known residue.** `さよなら` registers as a conditional because `なら` really is
 inside it. Quotative `〜と思う` had to be excluded explicitly. Potential and
@@ -150,10 +154,10 @@ dropped.
 | progress | `~/.local/share/yokubi-drill/progress.json` | `YOKUBI_DIR` |
 | collection | `~/.local/share/anki-cli/collection.anki2` | `ANKI_CLI_DIR` |
 
-The last row is read **only** by `--import-anki`. It defaults to the same place
-as [anki-review](https://github.com/ambiguouStr/anki-review), a terminal reviewer
-on Anki's real v3 scheduler, so if you use both they agree out of the box — but
-nothing here needs Anki installed, and the collection is never written to.
+The last row is touched **only** by `importers/anki.py`, read-only, and only
+when you ask for it. It defaults to the same place as
+[anki-review](https://github.com/ambiguouStr/anki-review) so the two agree out
+of the box, but nothing here needs Anki installed at all.
 
 ## Credits
 
@@ -168,9 +172,7 @@ repository, with the author's history attached. All the teaching here is theirs;
 this is only a reader and a drill harness bolted to the side.
 
 Example sentences come from whatever corpus you supply and belong to their
-respective authors. The reference numbers quoted above were measured against
-[Kaishi 1.5k](https://github.com/donkuri/Kaishi) and a Shin Kanzen Master N2
-deck; neither is included here.
+respective authors. None are included here.
 
 ## Licence
 
