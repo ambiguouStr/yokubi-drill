@@ -4,15 +4,22 @@ Read a [Yokubi](https://yoku.bi) lesson in your terminal, then drill it on real
 Japanese sentences — from any corpus you supply.
 
 ```
-Lesson 27 · conditionals · 2/77 · my-sentences
+Lesson 10 · て form · 文の組み立て · 2/58 · 1/1
 
-  そんな山の中に住んでいて車もなかったら、生活が不便に違いない。
+  次の文の ★ に入る最もよいものを、1・2・3・4から一つえらびなさい。
 
-  space reveal · r replay · g other lessons · p back · q quit
+  庭の手入れをしようと ＿★＿＿ ＿＿＿＿ ＿＿＿＿ ＿＿＿＿ 雨が降る。
 
-  そんな 山[やま]の 中[なか]に 住[す]んでいて 車[くるま]もなかったら、…
-  Living deep in the mountains without a car is bound to be inconvenient.
+    1 限って　　2 いる　　3 日に　　4 思って
+
+  1-4 answer · s skip · q quit
 ```
+
+The drill is JLPT's 文の組み立て: four pieces of a real sentence, shuffled, and
+you pick the one that belongs in ★. As on the paper, one piece is cut finer
+than a phrase (a particle on its own, an auxiliary parted from its て form) and
+the rest of the sentence stays around the blanks. The key is just the order the
+sentence's author wrote.
 
 ## Why
 
@@ -73,17 +80,46 @@ textbook you typed up.
 yokubi                 # list lessons, with how many sentences each has
 yokubi 10              # read lesson 10, then drill it
 yokubi 27 --drill      # straight to the sentences
+yokubi 27 --cards      # flip through them instead of the quiz
 yokubi 10 --read       # text only
 yokubi --random        # a drillable lesson you have not opened
 yokubi --where         # which paths are in use
 ```
 
-Keys: `space` reveal then advance · `r` replay · `g` which other lessons this
-sentence exercises · `p` back · `q` quit.
+Quiz keys: `1`–`4` answer · `s` skip · `r` replay · `q` quit. After a miss,
+`a` counts it as right: Japanese word order is loose and the chunking is a
+heuristic (cut where hiragana meets kanji, with no morphological analyser), so
+sometimes your order is also grammatical, or a word gets split in the wrong
+place. ★ is never put on a piece whose phrase could swap places with another,
+but not every case can be caught.
+
+Card keys (`--cards`): `space` reveal then advance · `r` replay · `g` which
+other lessons this sentence exercises · `p` back · `q` quit.
 
 Do not read it front to back. If you have been consuming Japanese for a while
 you already use most of this grammar without names for it; skim the list and
 open only the lessons whose title you cannot immediately explain.
+
+## With an agent as tutor
+
+The terminal quiz tells you the right order and nothing else. An agent such as
+Claude Code can run the same questions in conversation and explain each miss,
+so everything the quiz needs is also available without a terminal:
+
+```bash
+yokubi 10 --quiz-json 5              # five questions with their answers, as JSON
+yokubi 10 --quiz-json 5 --source kaishi
+yokubi 10 --quiz-result 4/5          # record a quiz taken in conversation
+yokubi 10 --mark-read
+yokubi --find 'てくれ' --source kaishi --limit 5   # real sentences for an explanation
+yokubi 9 --mistake ichidan-godan --note '慣れった → 慣れた'
+yokubi --mistakes                    # which kinds of mistake recur
+```
+
+Mistakes are appended to `mistakes.jsonl` in the data directory, one line each,
+tagged by kind. The tags are whatever the tutor chooses; the point is that
+"慣れった" and "震える is godan" end up under the same name, so the pattern
+shows before the count of wrong answers would.
 
 ## Progress
 
