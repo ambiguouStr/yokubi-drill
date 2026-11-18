@@ -12,8 +12,10 @@ import datetime
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
+import tempfile
 
 CORPUS_VERSION = 1
 ANKI = os.path.expanduser(os.environ.get("ANKI_CLI_DIR") or "~/.local/share/anki-cli")
@@ -36,19 +38,29 @@ def import_anki(out_path):
     """Read an Anki collection once and write a corpus file. This is the only
     code here that knows Anki exists; the drill reads the file, not the deck.
 
-    Opened read-only. Audio is recorded as a bare filename plus a media root in
+    Reads a temporary copy, so the live collection is never opened. Audio is recorded as a bare filename plus a media root in
     _meta, so the corpus stays portable even though the files do not."""
     collection = os.path.join(ANKI, "collection.anki2")
     media = os.path.join(ANKI, "collection.media")
     if not os.path.exists(collection):
         sys.exit(f"no collection at {collection}\nset ANKI_CLI_DIR to point at one")
-    con = sqlite3.connect(f"file:{collection}?mode=ro", uri=True)
+    # Read a copy, never the live file. The collection is in WAL mode, and once
+    # Anki closes cleanly there is no -wal file; a read-only open then needs to
+    # create one and fails with "unable to open database file".
+    tmp = tempfile.mkdtemp(prefix="yokubi-anki-")
+    copy = os.path.join(tmp, "collection.anki2")
+    for suffix in ("", "-wal"):
+        if os.path.exists(collection + suffix):
+            shutil.copy2(collection + suffix, copy + suffix)
+    con = sqlite3.connect(copy)
     # Anki's schema declares this collation; without it even a SELECT fails
     con.create_collation("unicase", lambda a, b: (a.lower() > b.lower()) - (a.lower() < b.lower()))
     try:
         con.execute("select 1 from notes limit 1").fetchone()
-    except sqlite3.OperationalError:
-        sys.exit("the collection is locked — quit Anki or `ank` and try again")
+    except sqlite3.OperationalError as e:
+        shutil.rmtree(tmp, ignore_errors=True)
+        sys.exit(f"cannot read the collection: {e}\n"
+                 "if Anki or `ank` was mid-write, quit it and try again")
     q = lambda s: con.execute(s).fetchall()
     rows, skipped = [], []
     for ntid, name in q("select id, name from notetypes"):
@@ -77,6 +89,7 @@ def import_anki(out_path):
                          "gloss": strip_html(p[gloss]) if gloss is not None else "",
                          "audio": sound})
     con.close()
+    shutil.rmtree(tmp, ignore_errors=True)
     write_corpus(rows, out_path, media=media, source=f"anki:{collection}")
     with_audio = sum(1 for r in rows if r["audio"])
     print(f"wrote {len(rows)} sentences to {out_path}  ({with_audio} with audio)")
